@@ -1,7 +1,9 @@
 ﻿using NReco.VideoConverter;
 using System;
-using System.IO;
-using System.Windows.Forms;
+﻿using System.Collections.Generic;
+﻿using System.IO;
+﻿using System.Linq;
+﻿using System.Windows.Forms;
 
 namespace TheShowsConverter
 {
@@ -19,16 +21,16 @@ namespace TheShowsConverter
             Hide();
 
             _cid = Guid.NewGuid().ToString();
-            
-            using (StreamWriter w = File.AppendText(LOG_PATH))
+            //TODO: meinhh |28-05-2017|- process will fail if two files run at the same time. logs file names should include start time or _cid
+
+            using (StreamWriter writter = File.AppendText(LOG_PATH))
             {
                 try
                 {
                     Log(w, "Program started");
+                    var filesToConvert= GetFilesToConvert(writter);
 
-                    var directory = GetDirectory(w);
-
-                    ConvertDirectory(w, directory);
+                    ConvertFiles(writter, filesToConvert);
                 }
                 catch (Exception ex)
                 {
@@ -40,41 +42,51 @@ namespace TheShowsConverter
                 }
             }
         }
-
-        private string GetDirectory(StreamWriter w)
+        
+       private IEnumerable<string> GetFilesToConvert(StreamWriter writer)
         {
             try
             {
+                IEnumerable<string> files;
                 var args = Environment.GetCommandLineArgs();
-                var directory = args[1];
+                //TODO: meinhh |28-05-2017|- what is args[0]?
+                string location = args[1];
+                FileAttributes attr = File.GetAttributes(location);
+                if (attr.HasFlag(FileAttributes.Directory))
+                {
+                    files = Directory.EnumerateFiles(location, "*.*", SearchOption.AllDirectories)
+                    .Where(s => s.EndsWith(".mkv") || s.EndsWith(".avi"));
+                }
+                else
+                {
+                    files = new[] {location};
+                }
 
-                Log(w, $"Params recived. directory: {directory}");
+                Log(writer, $"Params recived. directory: {location}");
 
-                return directory;
+                return files;
             }
             catch (Exception ex)
             {
                 throw new Exception("Getting params failed.", ex);
             }
-        }
+        }     
 
-        private void ConvertDirectory(StreamWriter w, string path)
-        {
-            var files = Directory.GetFiles(path, "*.mkv,*.avi", SearchOption.AllDirectories);
+        private void ConvertFiles(StreamWriter w, IEnumerable<string> files)
+        {        
 
             var converter = new FFMpegConverter();
 
             foreach (var fileName in files)
             {
-                ConvertFile(w, converter, path, fileName);
+                ConvertFile(w, converter, fileName);
             }
         }
 
-        private void ConvertFile(StreamWriter w, FFMpegConverter converter, string path, string fileName)
+        private void ConvertFile(StreamWriter w, FFMpegConverter converter,  string mkvPath)
         {
             try
             {
-                var mkvPath = Path.Combine(path, fileName);
                 var mp4Path = Path.ChangeExtension(mkvPath, "mp4");
 
                 converter.ConvertMedia(mkvPath, mp4Path, Format.mp4);
@@ -83,7 +95,7 @@ namespace TheShowsConverter
             }
             catch (Exception ex)
             {
-                Log(w, $"FAILURE! exception occured while converting the file {fileName}. ex: {ex}");
+                Log(w, $"FAILURE! exception occured while converting the file {mkvPath}. ex: {ex}");
             }
         }
 
